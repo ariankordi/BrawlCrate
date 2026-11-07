@@ -105,6 +105,8 @@ namespace BrawlLib.Internal.IO
                 FileShare.Read, 8, FileOptions.RandomAccess | FileOptions.DeleteOnClose);
             try
             {
+                // Windows grows a file to the mapped size, but Mono refuses to map past the end of a file.
+                stream.SetLength(length);
                 return FromStreamInternal(stream, FileMapProtect.ReadWrite, 0, length);
             }
             catch (Exception)
