@@ -165,7 +165,7 @@ namespace BrawlCrate.Cli
                 foreach (BRRESNode archive in archives)
                 {
                     // A lone BRRES exports straight into the output folder; nested ones get subfolders.
-                    string folder = archive == root ? outFolder : Path.Combine(outFolder, archive.Name);
+                    string folder = archive == root ? outFolder : ChildPath(outFolder, archive.Name, "");
                     failures += ExportArchive(archive, folder, options);
                 }
             }
@@ -214,9 +214,10 @@ namespace BrawlCrate.Cli
 
                 foreach (BRESEntryNode entry in group.Children.OfType<BRESEntryNode>())
                 {
-                    string outPath = Path.Combine(outFolder, entry.Name + extension);
+                    string outPath = null;
                     try
                     {
+                        outPath = ChildPath(outFolder, entry.Name, extension);
                         if (entry is CHR0Node animation && extension == ".anim")
                         {
                             // CHR0Node.Export asks for the model in a dialog; pass it directly instead.
@@ -231,13 +232,36 @@ namespace BrawlCrate.Cli
                     }
                     catch (Exception e)
                     {
-                        Console.Error.WriteLine($"failed: {outPath}: {e.GetType().Name}: {e.Message}");
+                        Console.Error.WriteLine($"failed: {outPath ?? entry.Name}: {e.GetType().Name}: {e.Message}");
                         failures++;
                     }
                 }
             }
 
             return failures;
+        }
+
+        /// <summary>
+        /// Builds a path for a name read from the input file, so a crafted name (e.g. "../x" or an
+        /// absolute path) can't write outside the output folder.
+        /// </summary>
+        private static string ChildPath(string folder, string name, string extension)
+        {
+            char[] invalid = Path.GetInvalidFileNameChars().Concat(new[] {'/', '\\', ':'}).ToArray();
+            string safe = new string((name ?? "").Select(c => invalid.Contains(c) ? '_' : c).ToArray());
+            if (safe.Trim('.', ' ').Length == 0)
+            {
+                safe = "_" + safe;
+            }
+
+            string root = Path.GetFullPath(folder).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+            string path = Path.GetFullPath(Path.Combine(root, safe + extension));
+            if (!path.StartsWith(root, StringComparison.Ordinal))
+            {
+                throw new InvalidDataException($"unsafe name in file: {name}");
+            }
+
+            return path;
         }
 
         private static string GroupExtension(BRESGroupNode.BRESGroupType type, ExportOptions options)
