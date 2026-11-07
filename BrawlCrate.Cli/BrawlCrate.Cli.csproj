@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net472</TargetFramework>
+    <AssemblyTitle>BrawlCrate CLI</AssemblyTitle>
+    <Product>BrawlCrate.Cli</Product>
+    <Platforms>AnyCPU;x64;x86</Platforms>
+    <Configurations>Debug;Release;Mono;Canary</Configurations>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\BrawlLib\BrawlLib.csproj" />
+  </ItemGroup>
+</Project>
