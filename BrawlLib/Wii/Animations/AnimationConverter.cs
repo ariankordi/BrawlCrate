@@ -165,9 +165,12 @@ namespace BrawlLib.Wii.Animations
             AnimationCode code = entry->Code;
             AnimDataFormat format;
 
+            // Revision 3 has a different format field layout and different FVS32/FVS48 key arrays.
+            bool isV3 = node != null && node._version == 3;
+
             if (code.HasScale)
             {
-                format = code.ScaleDataFormat;
+                format = isV3 ? AnimDataFormat.I12 : code.ScaleDataFormat;
                 if (code.IsScaleIsotropic)
                 {
                     if (code.IsScaleZFixed)
@@ -212,7 +215,14 @@ namespace BrawlLib.Wii.Animations
 
             if (code.HasRotation)
             {
-                format = code.RotationDataFormat;
+                if (isV3 && code.RotationDataFormatV3 > 3)
+                {
+                    // Revision 3 format 4 stores a baked rotation matrix, which is not supported.
+                    // Its size is unknown, so the translation that follows can't be located either.
+                    return kf;
+                }
+
+                format = isV3 ? (AnimDataFormat) code.RotationDataFormatV3 : code.RotationDataFormat;
                 if (code.IsRotationIsotropic)
                 {
                     if (code.IsRotationZFixed)
@@ -221,7 +231,7 @@ namespace BrawlLib.Wii.Animations
                     }
                     else
                     {
-                        DecodeFrames(kf, (VoidPtr) entry + *(buint*) sPtr++, format, 3, 4, 5);
+                        DecodeCHR0RotationFrames(kf, (VoidPtr) entry + *(buint*) sPtr++, format, isV3, 3, 4, 5);
                     }
                 }
                 else
@@ -232,7 +242,7 @@ namespace BrawlLib.Wii.Animations
                     }
                     else
                     {
-                        DecodeFrames(kf, (VoidPtr) entry + *(buint*) sPtr++, format, 3);
+                        DecodeCHR0RotationFrames(kf, (VoidPtr) entry + *(buint*) sPtr++, format, isV3, 3);
                     }
 
                     if (code.IsRotationYFixed)
@@ -241,7 +251,7 @@ namespace BrawlLib.Wii.Animations
                     }
                     else
                     {
-                        DecodeFrames(kf, (VoidPtr) entry + *(buint*) sPtr++, format, 4);
+                        DecodeCHR0RotationFrames(kf, (VoidPtr) entry + *(buint*) sPtr++, format, isV3, 4);
                     }
 
                     if (code.IsRotationZFixed)
@@ -250,14 +260,14 @@ namespace BrawlLib.Wii.Animations
                     }
                     else
                     {
-                        DecodeFrames(kf, (VoidPtr) entry + *(buint*) sPtr++, format, 5);
+                        DecodeCHR0RotationFrames(kf, (VoidPtr) entry + *(buint*) sPtr++, format, isV3, 5);
                     }
                 }
             }
 
             if (code.HasTranslation)
             {
-                format = code.TranslationDataFormat;
+                format = isV3 ? AnimDataFormat.I12 : code.TranslationDataFormat;
                 if (code.IsTranslationIsotropic)
                 {
                     if (code.IsTranslationZFixed)
@@ -301,6 +311,67 @@ namespace BrawlLib.Wii.Animations
             }
 
             return kf;
+        }
+
+        // CHR0 revision 3 FVS32/FVS48 (I4/I6) rotation arrays, as used by early NW4R titles such as the Mii Channel.
+        // Reverse engineered from the g3d code in the Mii Channel debug build ("NigaoeChannel.rpf": FVS48 reader at
+        // 0x8E5660, FVS32 reader at 0x8E57E8), and cross-checked against its animations.
+        // The doldecomp ogws/forecast headers (https://github.com/doldecomp/ogws) label their CHR0 layout revision 3,
+        // but that layout is revision 4's; this one is what revision 3 data actually uses.
+        //
+        // Unlike revision 4, the array header is the same 8 bytes as I12 (no step/base), and values are fixed-point angles:
+        //   FVS32: 32-bit word, frame u8 (bits 24-31), angle u12 * 360/4096 (bits 12-23), slope s12 / 32 (bits 0-11).
+        //   FVS48: frame s16 / 32, angle u16 * 360/65536, slope s16 / 256.
+        // The game interpolates these the short way around, so each key is moved by whole turns to within 180
+        // degrees of the previous key; plain Hermite interpolation then gives the same curve.
+        private const float V3FVS32AngleScale = 360.0f / 4096.0f;
+        private const float V3FVS48AngleScale = 360.0f / 65536.0f;
+
+        private static void DecodeCHR0RotationFrames(KeyframeCollection kf, void* dataAddr, AnimDataFormat format,
+                                                     bool isV3, params int[] arrays)
+        {
+            if (!isV3 || format == AnimDataFormat.I12)
+            {
+                DecodeFrames(kf, dataAddr, format, arrays);
+                return;
+            }
+
+            I12Header* header = (I12Header*) dataAddr;
+            int fCount = header->_numFrames;
+
+            foreach (int x in arrays)
+            {
+                float previous = 0.0f;
+                for (int i = 0; i < fCount; i++)
+                {
+                    int frame;
+                    float value, tangent;
+                    if (format == AnimDataFormat.I4)
+                    {
+                        I4Entry* entry = (I4Entry*) header->Data + i;
+                        frame = entry->FrameIndex;
+                        value = entry->Step * V3FVS32AngleScale;
+                        tangent = entry->Tangent;
+                    }
+                    else
+                    {
+                        // Frames are s10.5 fixed point; every known file uses whole frames, which is all
+                        // BrawlLib's keyframe arrays can hold.
+                        I6Entry* entry = (I6Entry*) header->Data + i;
+                        frame = entry->FrameIndex;
+                        value = entry->Step * V3FVS48AngleScale;
+                        tangent = entry->Tangent;
+                    }
+
+                    if (i > 0)
+                    {
+                        value -= 360.0f * (float) Math.Round((value - previous) / 360.0f);
+                    }
+
+                    previous = value;
+                    kf.SetFrameValue(x, frame, value, true)._tangent = tangent;
+                }
+            }
         }
 
         private static void DecodeFrames(KeyframeCollection kf, void* dataAddr, AnimDataFormat format,

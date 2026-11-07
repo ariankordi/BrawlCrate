@@ -274,8 +274,10 @@ namespace BrawlLib.SSBB.ResourceNodes
             }
             else
             {
+                // Entries are always encoded with the revision 4 key formats, so a rebuilt revision 3
+                // animation has to be labeled revision 4.
                 CHR0v4_3* header = (CHR0v4_3*) address;
-                *header = new CHR0v4_3(_version, length, _numFrames, Children.Count, _loop);
+                *header = new CHR0v4_3(Math.Max(_version, 4), length, _numFrames, Children.Count, _loop);
                 group = header->Group;
             }
 

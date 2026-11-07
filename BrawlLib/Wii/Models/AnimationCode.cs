@@ -220,6 +220,12 @@ namespace BrawlLib.Wii.Models
             set => _data[30, 2] = (uint) value;
         }
 
+        // CHR0 revision 3 (early NW4R, e.g. the Wii Mii Channel) only stores a rotation format, in bits 25-27:
+        // 0 = constant floats, 1 = FVS32, 2 = FVS48, 3 = FVS96, 4 = baked rotation matrix.
+        // Formats 0-3 line up with AnimDataFormat None/I4/I6/I12. Scale and translation are always FVS96 (I12).
+        // Reverse engineered from the Mii Channel's g3d code; see AnimationConverter.DecodeCHR0Keyframes.
+        public int RotationDataFormatV3 => (int) _data[25, 3];
+
         //public bool HasScale { get { return (_data & 0x400000) != 0; } set { _data = (_data & 0xFFBFFFFF) | (value ? (uint)0x400000 : 0); } }
         //public bool IsScaleIsotropic { get { return (_data & 0x10) != 0; } set { _data = (_data & 0xFFFFFFEF) | (value ? (uint)0x10 : 0); } }
         ////public bool IsIsotropicFixed { get { return (_data & 0xE000) != 0; } }
